@@ -1,0 +1,29 @@
+{
+    "name": "thijssensoftware/id-client",
+    "description": "Client for signing in workflow apps against Thijssensoftware ID (SSO).",
+    "type": "library",
+    "license": "proprietary",
+    "version": "0.1.0",
+    "require": {
+        "php": "^8.3",
+        "laravel/socialite": "^5.0",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Thijssensoftware\\IdClient\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Thijssensoftware\\IdClient\\IdClientServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
