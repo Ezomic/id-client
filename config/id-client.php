@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
     /*
      | The guard used to log the user in after a successful SSO callback.

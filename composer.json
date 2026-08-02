@@ -10,11 +10,18 @@
         "illuminate/support": "^11.0|^12.0|^13.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^9.0|^10.0"
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "laravel/pint": "^1.0"
     },
     "autoload": {
         "psr-4": {
             "Thijssensoftware\\IdClient\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Thijssensoftware\\IdClient\\Tests\\": "tests/"
         }
     },
     "extra": {
@@ -22,6 +29,15 @@
             "providers": [
                 "Thijssensoftware\\IdClient\\IdClientServiceProvider"
             ]
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
         }
     },
     "minimum-stability": "stable",
