@@ -19,7 +19,10 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
-            $table->string('email')->unique();
+            // Deliberately nullable, unlike Laravel's default. An SSO-only host may well
+            // permit null emails, and that is the schema the callback's email matching has
+            // to stay safe on, so the suite has to be able to express it.
+            $table->string('email')->nullable()->unique();
             $table->string('password')->nullable();
             $table->rememberToken();
             $table->timestamps();

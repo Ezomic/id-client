@@ -114,6 +114,50 @@ it('provisions a first-time user whose idp name is null', function (): void {
     expect(User::query()->first()->name)->toBe('robbin');
 });
 
+it('does not bind an unknown identity to an unrelated account with no email', function (): void {
+    $other = User::create(['name' => 'Someone Else', 'email' => null, 'idp_id' => 'idp-other']);
+
+    fakeDriver(idUser(id: 'idp-stranger', name: 'Stranger', email: null));
+
+    $this->get('auth/sso/callback')->assertForbidden();
+
+    expect(Auth::check())->toBeFalse()
+        ->and($other->fresh()->idp_id)->toBe('idp-other')
+        ->and($other->fresh()->name)->toBe('Someone Else')
+        ->and(User::query()->count())->toBe(1);
+});
+
+it('treats an empty email the same as a missing one', function (): void {
+    $other = User::create(['name' => 'Someone Else', 'email' => null, 'idp_id' => 'idp-other']);
+
+    fakeDriver(idUser(id: 'idp-stranger', email: ''));
+
+    $this->get('auth/sso/callback')->assertForbidden();
+
+    expect(Auth::check())->toBeFalse()
+        ->and($other->fresh()->idp_id)->toBe('idp-other');
+});
+
+it('refuses to provision a user the id server gave no email for', function (): void {
+    fakeDriver(idUser(email: null));
+
+    $this->get('auth/sso/callback')->assertForbidden();
+
+    expect(User::query()->count())->toBe(0)
+        ->and(Auth::check())->toBeFalse();
+});
+
+it('keeps the stored email when a known user signs in without one', function (): void {
+    $user = User::create(['name' => 'Robbin', 'email' => 'robbin@example.test', 'idp_id' => 'idp-1']);
+
+    fakeDriver(idUser(email: null));
+
+    $this->get('auth/sso/callback')->assertRedirect('/dashboard');
+
+    expect(Auth::id())->toBe($user->id)
+        ->and($user->fresh()->email)->toBe('robbin@example.test');
+});
+
 it('keeps the local name when the id server sends an empty one', function (): void {
     User::create(['name' => 'Local Name', 'email' => 'robbin@example.test', 'idp_id' => 'idp-1']);
 
