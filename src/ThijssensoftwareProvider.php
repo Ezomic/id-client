@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Thijssensoftware\IdClient;
 
 use GuzzleHttp\RequestOptions;
