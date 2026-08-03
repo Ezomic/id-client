@@ -93,6 +93,27 @@ it('refuses a user the id server denied access to', function (): void {
     expect(Auth::check())->toBeFalse();
 });
 
+it('provisions a first-time user whose idp name is empty', function (): void {
+    fakeDriver(idUser(name: ''));
+
+    $this->get('auth/sso/callback')->assertRedirect('/dashboard');
+
+    $user = User::query()->where('idp_id', 'idp-1')->first();
+
+    expect($user)->not->toBeNull()
+        ->and($user->name)->toBe('robbin')
+        ->and($user->email)->toBe('robbin@example.test')
+        ->and(Auth::id())->toBe($user->id);
+});
+
+it('provisions a first-time user whose idp name is null', function (): void {
+    fakeDriver(idUser(name: null));
+
+    $this->get('auth/sso/callback')->assertRedirect('/dashboard');
+
+    expect(User::query()->first()->name)->toBe('robbin');
+});
+
 it('keeps the local name when the id server sends an empty one', function (): void {
     User::create(['name' => 'Local Name', 'email' => 'robbin@example.test', 'idp_id' => 'idp-1']);
 
