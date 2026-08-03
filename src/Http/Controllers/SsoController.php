@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Laravel\Socialite\Contracts\Factory as Socialite;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Symfony\Component\HttpFoundation\Response;
@@ -58,10 +59,21 @@ class SsoController extends Controller
 
         $user->forceFill([
             'idp_id' => $idUser->getId(),
-            'name' => $idUser->getName() ?: $user->name,
+            'name' => $this->resolveName($idUser, $user->name),
             'email' => $idUser->getEmail(),
         ])->save();
 
         return $user;
+    }
+
+    /**
+     * The users table requires a name, and a user being provisioned for the first time
+     * has no local one to fall back to, so derive one rather than writing null.
+     */
+    private function resolveName(SocialiteUser $idUser, ?string $current): string
+    {
+        return $idUser->getName()
+            ?: $current
+            ?: Str::before((string) $idUser->getEmail(), '@');
     }
 }
