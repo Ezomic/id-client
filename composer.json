@@ -3,7 +3,7 @@
     "description": "Client for signing in workflow apps against Thijssensoftware ID (SSO).",
     "type": "library",
     "license": "proprietary",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "require": {
         "php": "^8.3",
         "laravel/socialite": "^5.0",
