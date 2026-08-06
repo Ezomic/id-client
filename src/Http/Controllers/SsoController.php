@@ -8,12 +8,14 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Contracts\Factory as Socialite;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Symfony\Component\HttpFoundation\Response;
 use Thijssensoftware\IdClient\Exceptions\AccessDeniedException;
+use Thijssensoftware\IdClient\Http\Middleware\EnsureSsoSessionIsActive;
 
 class SsoController extends Controller
 {
@@ -37,6 +39,10 @@ class SsoController extends Controller
         abort_if($user === null, Response::HTTP_FORBIDDEN, 'No account for this user.');
 
         Auth::guard(config('id-client.guard'))->login($user, remember: true);
+
+        // Stamped so EnsureSsoSessionIsActive can tell a session established
+        // before a back-channel logout from one established after it.
+        session([EnsureSsoSessionIsActive::AUTHENTICATED_AT => Carbon::now()->getTimestamp()]);
 
         return redirect()->intended(config('id-client.home'));
     }

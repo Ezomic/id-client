@@ -20,6 +20,13 @@ return [
     'home' => env('THIJSSENSOFTWARE_ID_HOME', '/dashboard'),
 
     /*
+     | Shared secret for back-channel single logout. Thijssensoftware ID signs
+     | its "this user signed out" call with it; without it that endpoint refuses
+     | every call rather than trusting an unsigned one. Printed by `id:app`.
+     */
+    'logout_secret' => env('THIJSSENSOFTWARE_ID_LOGOUT_SECRET'),
+
+    /*
      | Just-in-time provisioning. When true, a user who authenticates at the
      | IdP (and is authorised for this app) but has no local account yet is
      | created automatically. The IdP already enforces per-app access, so a
