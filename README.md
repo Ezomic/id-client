@@ -48,6 +48,20 @@ works on any session driver.
 Calls older than five minutes are rejected, so a captured request cannot be
 replayed later.
 
+## Versioning
+
+The package is versioned `0.x` and consumers pin an explicit caret on the minor:
+
+```json
+"thijssensoftware/id-client": "^0.2.0"
+```
+
+A caret on a `0.x` version is locked to that minor, so a bump is a deliberate,
+per-app edit rather than something `composer update` picks up on its own. That is
+intentional: 0.2 needs a new environment variable and a migration, so a consumer
+that pulled it silently would break rather than upgrade. Treat a minor bump as a
+coordinated rollout across the estate, not a dependency refresh.
+
 ### Upgrading from 0.1.x
 
 Every consumer needs a redeploy for single logout to work:
