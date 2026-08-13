@@ -58,6 +58,11 @@ it('ignores an event type it does not know', function () {
     $user = User::create(['name' => 'Robbin', 'email' => 'r@example.test', 'idp_id' => '42']);
 
     // Upgrading ID must not break a consumer that has not caught up yet.
+    //
+    // The `ignored` body is also how ID tells 0.3 apart from 0.2, which ends
+    // the session on any event and answers `ok`. Changing this string or its
+    // status code makes ID read every consumer as legacy and withhold
+    // user.updated from all of them. See ID-77.
     signedEvent([
         'event' => 'something.from.the.future',
         'sub' => '42',
