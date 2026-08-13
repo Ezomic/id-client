@@ -31,7 +31,7 @@ Optional: `THIJSSENSOFTWARE_ID_GUARD`, `THIJSSENSOFTWARE_ID_USER_MODEL`,
 |-------|--------------|
 | `GET /auth/sso/redirect` | Starts the OAuth flow |
 | `GET /auth/sso/callback` | Completes it and signs the user in |
-| `POST /auth/sso/logout` | Back-channel logout, called by ID |
+| `POST /auth/sso/logout` | Back-channel events, called by ID |
 
 ## Single logout
 
@@ -61,6 +61,45 @@ per-app edit rather than something `composer update` picks up on its own. That i
 intentional: 0.2 needs a new environment variable and a migration, so a consumer
 that pulled it silently would break rather than upgrade. Treat a minor bump as a
 coordinated rollout across the estate, not a dependency refresh.
+
+## Back-channel events
+
+`POST /auth/sso/logout` carries an `event` field. Unknown types are ignored with
+a 200, so upgrading ID never breaks a consumer that has not caught up.
+
+| Event | Effect |
+|-------|--------|
+| `logout` | End the local session |
+| `access.revoked` | End the local session; the user lost access to this app |
+| `user.updated` | Refresh the cached `name` and `email` |
+
+A payload with no `event` is treated as a logout, which is what a pre-0.3 ID
+server sends.
+
+## Signing out of the whole estate
+
+`EstateLogout::perform()` ends this app's session and asks ID to end the rest.
+Plain local logout stays available and unchanged; which one you offer is your
+decision.
+
+```php
+use Thijssensoftware\IdClient\EstateLogout;
+
+Route::post('/logout', function () {
+    EstateLogout::perform();
+
+    return redirect('/');
+});
+```
+
+The request is authenticated with the user's own access token, so an app can
+only end the session of the person whose token it holds.
+
+### Upgrading from 0.2.x
+
+Bump to `^0.3.0` and redeploy. No new environment variable and no migration:
+0.3 is additive, and a 0.2 consumer keeps working against a 0.3 server because
+it treats the unknown events as logouts it never receives.
 
 ### Upgrading from 0.1.x
 

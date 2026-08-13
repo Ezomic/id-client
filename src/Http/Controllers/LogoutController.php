@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Thijssensoftware\IdClient\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -47,9 +48,16 @@ class LogoutController extends Controller
             return response()->json(['error' => 'invalid_request'], Response::HTTP_BAD_REQUEST);
         }
 
-        $this->markLoggedOut((string) $subject);
+        // Absent means a pre-0.3 server, which only ever sent logouts.
+        $event = $payload['event'] ?? 'logout';
 
-        return response()->json(['status' => 'ok']);
+        return match ($event) {
+            'logout', 'access.revoked' => $this->endSession((string) $subject),
+            'user.updated' => $this->refreshUser((string) $subject, $payload),
+            // An unknown type from a newer ID must not error, or upgrading the
+            // server would break every consumer that has not caught up yet.
+            default => response()->json(['status' => 'ignored']),
+        };
     }
 
     /**
@@ -68,13 +76,42 @@ class LogoutController extends Controller
         return abs(Carbon::now()->getTimestamp() - $issuedAt) <= 300;
     }
 
-    private function markLoggedOut(string $idpId): void
+    private function endSession(string $idpId): JsonResponse
+    {
+        $this->users()->where('idp_id', $idpId)->update(['sso_logged_out_at' => Carbon::now()]);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * A consumer writes its copy of the user once at the OAuth callback and
+     * never updates it, so without this a name or email changed at ID stays
+     * stale here indefinitely.
+     *
+     * @param  array<mixed>  $payload
+     */
+    private function refreshUser(string $idpId, array $payload): JsonResponse
+    {
+        $attributes = array_filter([
+            'name' => is_string($payload['name'] ?? null) ? $payload['name'] : null,
+            'email' => is_string($payload['email'] ?? null) ? $payload['email'] : null,
+        ], fn (?string $value): bool => $value !== null && $value !== '');
+
+        if ($attributes !== []) {
+            $this->users()->where('idp_id', $idpId)->update($attributes);
+        }
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * @return Builder<Model>
+     */
+    private function users()
     {
         /** @var class-string<Model> $model */
         $model = config('id-client.user_model');
 
-        $model::query()
-            ->where('idp_id', $idpId)
-            ->update(['sso_logged_out_at' => Carbon::now()]);
+        return $model::query();
     }
 }
