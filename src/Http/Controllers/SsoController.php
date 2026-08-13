@@ -44,6 +44,10 @@ class SsoController extends Controller
         // before a back-channel logout from one established after it.
         session([EnsureSsoSessionIsActive::AUTHENTICATED_AT => Carbon::now()->getTimestamp()]);
 
+        // Kept so EstateLogout can prove to ID whose session is ending. It
+        // lives and dies with this session.
+        session(['id_client.access_token' => $idUser->token ?? null]);
+
         return redirect()->intended(config('id-client.home'));
     }
 
