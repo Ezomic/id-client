@@ -64,8 +64,15 @@ coordinated rollout across the estate, not a dependency refresh.
 
 ## Back-channel events
 
-`POST /auth/sso/logout` carries an `event` field. Unknown types are ignored with
-a 200, so upgrading ID never breaks a consumer that has not caught up.
+`POST /auth/sso/logout` carries an `event` field. From 0.3 on, unknown types are
+ignored with a 200, so upgrading ID never breaks a consumer on 0.3 or later.
+
+0.2 is a different story: it does not read the field at all and ends the session
+on any signed payload it accepts, so an event that does not mean "sign out" logs
+the user out anyway. ID protects itself against that rather than trusting the
+version: it probes each consumer with an unknown event, treats the `ignored`
+answer as the only proof of 0.3, and withholds anything but a sign-out from
+consumers that answer otherwise. See ID-77.
 
 | Event | Effect |
 |-------|--------|
@@ -97,9 +104,13 @@ only end the session of the person whose token it holds.
 
 ### Upgrading from 0.2.x
 
-Bump to `^0.3.0` and redeploy. No new environment variable and no migration:
-0.3 is additive, and a 0.2 consumer keeps working against a 0.3 server because
-it treats the unknown events as logouts it never receives.
+Bump to `^0.3.0` and redeploy. No new environment variable and no migration.
+
+Worth doing rather than deferring: a 0.2 consumer does not merely miss the newer
+events, it mishandles them. It ends the session on anything signed, so a profile
+update reads as a sign-out. ID withholds those events until it has probed the
+consumer and seen 0.3 answer, which means an app left on 0.2 keeps working but
+never receives them.
 
 ### Upgrading from 0.1.x
 
