@@ -120,7 +120,16 @@ migration. Two fixes to back-channel logout:
   `access.revoked` now also replace the user's `remember_token`, which stops
   the cookie restoring a session after the logout. The middleware now stamps a
   session the cookie restores with the time of the restore, so a logout that
-  comes later ends it on its next request like any other session. (ID-88)
+  comes later ends it on its next request like any other session. A cookie the
+  guard refuses (a user with no password, for one) leaves the session alone.
+  (ID-88)
+
+What the upgrade cannot reach backwards: a user who was signed out while the
+app was still on 0.3.0 kept the `remember_token` that logout never replaced, so
+their old cookie still restores a session after the upgrade, stamped with the
+time of that restore and so newer than the logout. Sessions restored before the
+upgrade also stay unstamped until they expire. Where that matters, replace
+`remember_token` once for every user whose `sso_logged_out_at` is already set.
 
 ### Upgrading from 0.2.x
 

@@ -212,6 +212,9 @@ it('stops a remember-me cookie from signing the user back in', function (string 
 
     signedCall(['event' => $event, 'sub' => '42', 'issued_at' => Carbon::now()->getTimestamp()])->assertOk();
 
+    // Later, so the cookie itself decides rather than a same-second stamp.
+    $this->travel(1)->minute();
+
     $returningVisit()->assertContent('guest');
 })->with(['logout', 'access.revoked']);
 
@@ -245,6 +248,25 @@ it('ends a session the remember-me cookie restored before the logout', function 
     $this->get('/whoami')->assertRedirect('/');
 
     expect(Auth::check())->toBeFalse();
+});
+
+it('does not stamp a session whose remember-me cookie was refused', function () {
+    Route::middleware('web')->get('/whoami', function () {
+        return Auth::check() ? 'signed in' : (session()->has(EnsureSsoSessionIsActive::AUTHENTICATED_AT) ? 'guest, stamped' : 'guest');
+    });
+
+    // No password: Laravel refuses to restore a session from the cookie for
+    // such a user, but only after it has already flagged the request viaRemember.
+    $user = User::create(['name' => 'Robbin', 'email' => 'r@example.test', 'idp_id' => '42']);
+    $guard = Auth::guard(config('id-client.guard'));
+    $recaller = $guard->getRecallerName();
+    $guard->login($user, remember: true);
+    $cookie = Cookie::queued($recaller)->getValue();
+
+    Auth::forgetGuards();
+    $this->flushSession();
+
+    $this->withCookie($recaller, $cookie)->get('/whoami')->assertContent('guest');
 });
 
 it('stamps the logout on a model that opts out of remember tokens', function () {

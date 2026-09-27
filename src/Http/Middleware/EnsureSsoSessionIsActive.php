@@ -31,7 +31,10 @@ class EnsureSsoSessionIsActive
 
         // A session the remember-me cookie restores never passed through the
         // SSO callback, so it has no stamp and a later logout would leave it be.
-        if ($guard->viaRemember() && ! $request->session()->has(self::AUTHENTICATED_AT)) {
+        // Only a restore that produced a user counts: Laravel flags viaRemember
+        // before it checks the password, so a refused cookie would otherwise
+        // stamp a guest session that someone then signs into another way.
+        if ($user instanceof Model && $guard->viaRemember() && ! $request->session()->has(self::AUTHENTICATED_AT)) {
             $request->session()->put(self::AUTHENTICATED_AT, Carbon::now()->getTimestamp());
         }
 
