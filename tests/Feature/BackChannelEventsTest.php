@@ -135,6 +135,25 @@ it('dispatches AccessRevoked for the matching user on access.revoked', function 
     expect($user->fresh()->sso_logged_out_at)->not->toBeNull();
 });
 
+it('fails the delivery when an AccessRevoked listener throws, with the stamp already written', function () {
+    Event::listen(function (AccessRevoked $event): void {
+        throw new RuntimeException('Token store unavailable.');
+    });
+
+    $user = User::create(['name' => 'Robbin', 'email' => 'r@example.test', 'idp_id' => '42']);
+
+    // ID only retries a non-2xx answer, so swallowing the failure here would
+    // leave the app's own credentials alive with nothing left to try again.
+    signedEvent([
+        'event' => 'access.revoked',
+        'sub' => '42',
+        'issued_at' => Carbon::now()->getTimestamp(),
+    ])->assertServerError();
+
+    // The web session must not wait on a listener that may keep failing.
+    expect($user->fresh()->sso_logged_out_at)->not->toBeNull();
+});
+
 it('does not dispatch AccessRevoked on logout', function () {
     Event::fake([AccessRevoked::class]);
 

@@ -91,10 +91,15 @@ accepting those after ID revokes the user's access unless it listens for
 `Thijssensoftware\IdClient\Events\AccessRevoked`:
 
 ```php
+use App\Models\User;
 use Illuminate\Support\Facades\Event;
 use Thijssensoftware\IdClient\Events\AccessRevoked;
 
-Event::listen(function (AccessRevoked $event) {
+Event::listen(function (AccessRevoked $event): void {
+    if (! $event->user instanceof User) {
+        return;
+    }
+
     $event->user->tokens()->delete();
 });
 ```
@@ -103,7 +108,10 @@ The event is part of the package's contract, so its class name and its `user`
 property only change in a new minor:
 
 - `user` is the local user model (`id-client.user_model`), already carrying the
-  `sso_logged_out_at` stamp.
+  `sso_logged_out_at` stamp. It is typed as `Model`, because the package only
+  knows your class from config, so narrow it to your own model as above before
+  calling anything that model adds, such as `tokens()`. Larastan rejects the
+  call otherwise.
 - It is dispatched once per local user whose `idp_id` matches, on
   `access.revoked` only, and not at all when no local user matches.
 - It is never dispatched on `logout`. ID sends that per session, so tying
@@ -113,6 +121,16 @@ property only change in a new minor:
 Nothing listens by default. A listener runs inside ID's delivery, which times
 out after five seconds and is retried when it fails, so keep it quick and
 idempotent, or queue it.
+
+ID does not send `access.revoked` on every revoked grant yet. Today it only
+reaches an app for which ID still holds a token issued to that user and an
+authorized-client row for them. Signing out at ID deletes both, and the token
+from the last sign-in is purged about a week later. So a user who signed in
+once, created an API token, and then signed out at ID or stayed away for a week
+gets no `access.revoked` when their access is revoked: the app hears nothing,
+and neither the stamp nor your listener runs. ID-89 tracks sending it for every
+revoked grant. Until that lands, do not treat this event alone as a guarantee
+that a revoked user loses what the app issued them.
 
 ## Signing out of the whole estate
 
