@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Thijssensoftware\IdClient\Http\Middleware;
 
+use Carbon\CarbonImmutable;
 use Closure;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -23,10 +26,20 @@ class EnsureSsoSessionIsActive
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = Auth::guard(config('id-client.guard'))->user();
+        $guard = Auth::guard(config('id-client.guard'));
+        $user = $guard->user();
+
+        // A session the remember-me cookie restores never passed through the
+        // SSO callback, so it has no stamp and a later logout would leave it be.
+        // Only a restore that produced a user counts: Laravel flags viaRemember
+        // before it checks the password, so a refused cookie would otherwise
+        // stamp a guest session that someone then signs into another way.
+        if ($user instanceof Model && $guard->viaRemember() && ! $request->session()->has(self::AUTHENTICATED_AT)) {
+            $request->session()->put(self::AUTHENTICATED_AT, Carbon::now()->getTimestamp());
+        }
 
         if ($user instanceof Model && $this->signedOutAtIdp($request, $user)) {
-            Auth::guard(config('id-client.guard'))->logout();
+            $guard->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
@@ -50,6 +63,12 @@ class EnsureSsoSessionIsActive
         // through SSO. Either way there is nothing to compare, so leave it be.
         if (! is_int($authenticatedAt)) {
             return false;
+        }
+
+        // The package adds the column but has no say over the consumer's model,
+        // so an app that does not cast it hands back the raw database string.
+        if (! $loggedOutAt instanceof DateTimeInterface) {
+            $loggedOutAt = CarbonImmutable::parse($loggedOutAt);
         }
 
         return $loggedOutAt->getTimestamp() >= $authenticatedAt;

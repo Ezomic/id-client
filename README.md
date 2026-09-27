@@ -102,6 +102,35 @@ Route::post('/logout', function () {
 The request is authenticated with the user's own access token, so an app can
 only end the session of the person whose token it holds.
 
+### Upgrading to 0.3.1
+
+Run `composer update thijssensoftware/id-client` in every app on `^0.3.0`. The
+constraint stays as it is, and there is no new environment variable and no
+migration. Two fixes to back-channel logout:
+
+- In an app whose user model does not cast `sso_logged_out_at`, a user's first
+  logout broke that app for them until it upgraded. The stamp stays on the user
+  row, so every request from every later SSO sign-in answered 500, not only the
+  rest of the session that was signed out. The middleware now parses the raw
+  value itself, so no cast is needed, and an existing cast keeps working.
+  (ID-87)
+- A remember-me cookie outlived a logout. Sign-in always sets one, and a
+  session restored from it never passed through the SSO callback, so it had no
+  sign-in time for the middleware to compare the logout against. `logout` and
+  `access.revoked` now also replace the user's `remember_token`, which stops
+  the cookie restoring a session after the logout. The middleware now stamps a
+  session the cookie restores with the time of the restore, so a logout that
+  comes later ends it on its next request like any other session. A cookie the
+  guard refuses (a user with no password, for one) leaves the session alone.
+  (ID-88)
+
+What the upgrade cannot reach backwards: a user who was signed out while the
+app was still on 0.3.0 kept the `remember_token` that logout never replaced, so
+their old cookie still restores a session after the upgrade, stamped with the
+time of that restore and so newer than the logout. Sessions restored before the
+upgrade also stay unstamped until they expire. Where that matters, replace
+`remember_token` once for every user whose `sso_logged_out_at` is already set.
+
 ### Upgrading from 0.2.x
 
 Bump to `^0.3.0` and redeploy. No new environment variable and no migration.
