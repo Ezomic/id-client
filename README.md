@@ -53,7 +53,7 @@ replayed later.
 The package is versioned `0.x` and consumers pin an explicit caret on the minor:
 
 ```json
-"thijssensoftware/id-client": "^0.2.0"
+"thijssensoftware/id-client": "^0.4.0"
 ```
 
 A caret on a `0.x` version is locked to that minor, so a bump is a deliberate,
@@ -77,11 +77,79 @@ consumers that answer otherwise. See ID-77.
 | Event | Effect |
 |-------|--------|
 | `logout` | End the local session |
-| `access.revoked` | End the local session; the user lost access to this app |
+| `access.revoked` | End the local session and dispatch `AccessRevoked`; the user lost access to this app |
 | `user.updated` | Refresh the cached `name` and `email` |
 
 A payload with no `event` is treated as a logout, which is what a pre-0.3 ID
 server sends.
+
+## Access revocation
+
+`access.revoked` stamps `sso_logged_out_at` like a logout, which only ends the
+web session. An app that issues anything else, such as Sanctum API tokens, keeps
+accepting those after ID revokes the user's access unless it listens for
+`Thijssensoftware\IdClient\Events\AccessRevoked`:
+
+```php
+use App\Models\User;
+use Illuminate\Support\Facades\Event;
+use LogicException;
+use Thijssensoftware\IdClient\Events\AccessRevoked;
+
+Event::listen(function (AccessRevoked $event): void {
+    if (! $event->user instanceof User) {
+        throw new LogicException('id-client.user_model is not '.User::class.'.');
+    }
+
+    $event->user->tokens()->delete();
+});
+```
+
+The event is part of the package's contract, so its class name and its `user`
+property only change in a new minor:
+
+- `user` is the local user model (`id-client.user_model`), already carrying the
+  `sso_logged_out_at` stamp. It is typed as `Model`, because the package only
+  knows your class from config, so narrow it to your own model as above before
+  calling anything that model adds, such as `tokens()`. Larastan rejects the
+  call otherwise. Throw when it is not your model rather than returning: a
+  misconfigured app then answers 500, which ID records and retries, instead of
+  answering 200 and keeping every token.
+- It is dispatched once per local user whose `idp_id` matches, on
+  `access.revoked` only, and not at all when no local user matches.
+- It is never dispatched on `logout`. ID sends that per session, so tying
+  tokens to it would kill a script every time the user signs out on another
+  machine.
+
+Nothing listens by default. A listener runs inside ID's delivery, so keep it
+quick and idempotent. ID waits five seconds for an answer and counts a timeout
+or anything but a 2xx as a failure. It makes five attempts in all: the first
+right after the revoke, then one on each of its retry runs, which come every
+five minutes. After the fifth, at most about 20 minutes after the first, it
+gives up for good. A queued listener gets none of those retries: the endpoint
+answers 200 as soon as the job is queued, so ID never sees it fail. Give a
+queued listener its own `$tries` and `$backoff`.
+
+ID does not send `access.revoked` for every way a user can lose access yet, and
+without it your listener never runs:
+
+- A revoked grant reaches the app only if ID still holds a token issued to that
+  user for it and an authorized-client row for them. Signing out at ID deletes
+  both, and the token from the last sign-in is purged about a week later. So a
+  user who signed in once, created an API token, and then signed out at ID or
+  stayed away for a week gets no `access.revoked` when their access is revoked.
+  Taking a user off the app's access list on ID's applications screen, rather
+  than on the user's page or through a group, sends nothing at all. ID-89
+  tracks sending it for every revoked grant, that screen included.
+- Deactivating the app at ID revokes its OAuth client and tokens and sends the
+  app nothing, not even a `logout`. ID-89 does not change that.
+- A user deleting their own ID account sends nothing at all, not even a
+  `logout`: the logout ID queues is deleted along with the user before it is
+  delivered, so their sessions and remember cookies at every app keep working.
+  That is tracked as ID-90.
+
+Until ID sends it in all of these cases, do not treat this event alone as a
+guarantee that a user who lost access loses what the app issued them.
 
 ## Signing out of the whole estate
 
@@ -102,7 +170,17 @@ Route::post('/logout', function () {
 The request is authenticated with the user's own access token, so an app can
 only end the session of the person whose token it holds.
 
-### Upgrading to 0.3.1
+### Upgrading from 0.3.x
+
+Bump to `^0.4.0` and redeploy. No new environment variable and no migration.
+It includes both 0.3.1 fixes below.
+
+The only change is the `AccessRevoked` event. Nothing listens to it by default,
+so an app behaves exactly as on 0.3 until it registers a listener. Any app that
+issues its own credentials, such as API tokens, should register one: see
+[Access revocation](#access-revocation).
+
+### Upgrading from 0.3.0 to 0.3.1
 
 Run `composer update thijssensoftware/id-client` in every app on `^0.3.0`. The
 constraint stays as it is, and there is no new environment variable and no
