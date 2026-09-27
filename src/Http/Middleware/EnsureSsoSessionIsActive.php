@@ -9,6 +9,7 @@ use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -25,10 +26,17 @@ class EnsureSsoSessionIsActive
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = Auth::guard(config('id-client.guard'))->user();
+        $guard = Auth::guard(config('id-client.guard'));
+        $user = $guard->user();
+
+        // A session the remember-me cookie restores never passed through the
+        // SSO callback, so it has no stamp and a later logout would leave it be.
+        if ($guard->viaRemember() && ! $request->session()->has(self::AUTHENTICATED_AT)) {
+            $request->session()->put(self::AUTHENTICATED_AT, Carbon::now()->getTimestamp());
+        }
 
         if ($user instanceof Model && $this->signedOutAtIdp($request, $user)) {
-            Auth::guard(config('id-client.guard'))->logout();
+            $guard->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 

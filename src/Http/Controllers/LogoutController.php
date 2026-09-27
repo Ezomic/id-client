@@ -78,10 +78,10 @@ class LogoutController extends Controller
     }
 
     /**
-     * Sign-in always sets a remember-me cookie, and a session restored from it
-     * carries no sign-in stamp for EnsureSsoSessionIsActive to compare, so the
-     * stamp alone would let that cookie outlive the logout. Cycling the token,
-     * as Laravel's own logout does, is what ends it.
+     * Sign-in always sets a remember-me cookie, and a session that cookie
+     * restores after the logout is stamped later than the logout, so the stamp
+     * alone would let the cookie outlive it. Cycling the token, as Laravel's
+     * own logout does, is what ends it.
      */
     private function endSession(string $idpId): JsonResponse
     {

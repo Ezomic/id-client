@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Thijssensoftware\IdClient\Http\Middleware\EnsureSsoSessionIsActive;
 use Thijssensoftware\IdClient\Tests\Fixtures\User;
+use Thijssensoftware\IdClient\Tests\Fixtures\UserWithoutRememberToken;
 
 const LOGOUT_SECRET = 'shared-logout-secret';
 
@@ -160,6 +161,26 @@ it('ends the session when the app does not cast the stamp', function () {
     expect(Auth::check())->toBeFalse();
 });
 
+it('keeps a later session when the app does not cast the stamp', function () {
+    Route::middleware('web')->get('/protected', fn () => 'still in');
+
+    User::create([
+        'name' => 'Robbin',
+        'email' => 'r@example.test',
+        'idp_id' => '42',
+        'sso_logged_out_at' => Carbon::now()->subHour(),
+    ]);
+
+    $user = User::query()->where('idp_id', '42')->sole();
+
+    expect($user->sso_logged_out_at)->toBeString();
+
+    $this->actingAs($user)
+        ->withSession([EnsureSsoSessionIsActive::AUTHENTICATED_AT => Carbon::now()->subMinutes(30)->getTimestamp()])
+        ->get('/protected')
+        ->assertOk();
+});
+
 it('stops a remember-me cookie from signing the user back in', function (string $event) {
     Route::middleware('web')->get('/whoami', fn () => Auth::check() ? 'signed in' : 'guest');
 
@@ -193,3 +214,45 @@ it('stops a remember-me cookie from signing the user back in', function (string 
 
     $returningVisit()->assertContent('guest');
 })->with(['logout', 'access.revoked']);
+
+it('ends a session the remember-me cookie restored before the logout', function () {
+    Route::middleware('web')->get('/whoami', fn () => Auth::check() ? 'signed in' : 'guest');
+
+    $user = User::create([
+        'name' => 'Robbin',
+        'email' => 'r@example.test',
+        'idp_id' => '42',
+        'password' => Hash::make('pre-sso-password'),
+    ]);
+    $guard = Auth::guard(config('id-client.guard'));
+    $recaller = $guard->getRecallerName();
+
+    $guard->login($user, remember: true);
+    $cookie = Cookie::queued($recaller)->getValue();
+
+    // The session expired and the cookie alone starts a new one.
+    Auth::forgetGuards();
+    $this->flushSession();
+    $this->withCookie($recaller, $cookie)->get('/whoami')->assertContent('signed in');
+
+    $this->travel(1)->minute();
+
+    signedCall(['sub' => '42', 'issued_at' => Carbon::now()->getTimestamp()])->assertOk();
+
+    // The restored session's next request, which the guard answers from the
+    // session rather than the cookie.
+    Auth::forgetGuards();
+    $this->get('/whoami')->assertRedirect('/');
+
+    expect(Auth::check())->toBeFalse();
+});
+
+it('stamps the logout on a model that opts out of remember tokens', function () {
+    config()->set('id-client.user_model', UserWithoutRememberToken::class);
+
+    $user = UserWithoutRememberToken::create(['name' => 'Robbin', 'email' => 'r@example.test', 'idp_id' => '42']);
+
+    signedCall(['sub' => '42', 'issued_at' => Carbon::now()->getTimestamp()])->assertOk();
+
+    expect($user->fresh()->sso_logged_out_at)->not->toBeNull();
+});
