@@ -140,13 +140,13 @@ without it your listener never runs:
   stayed away for a week gets no `access.revoked` when their access is revoked.
   Taking a user off the app's access list on ID's applications screen, rather
   than on the user's page or through a group, sends nothing at all. ID-89
-  tracks sending it for every revoked grant.
+  tracks sending it for every revoked grant, that screen included.
 - Deactivating the app at ID revokes its OAuth client and tokens and sends the
   app nothing, not even a `logout`. ID-89 does not change that.
-- A user deleting their own ID account sends no `access.revoked`, at most a
-  `logout` to the apps signed in from the session that deleted it, which ends
-  the web session but does not dispatch `AccessRevoked`. ID-89 does not change
-  that either.
+- A user deleting their own ID account sends nothing at all, not even a
+  `logout`: the logout ID queues is deleted along with the user before it is
+  delivered, so their sessions and remember cookies at every app keep working.
+  That is tracked as ID-90.
 
 Until ID sends it in all of these cases, do not treat this event alone as a
 guarantee that a user who lost access loses what the app issued them.
