@@ -93,11 +93,12 @@ accepting those after ID revokes the user's access unless it listens for
 ```php
 use App\Models\User;
 use Illuminate\Support\Facades\Event;
+use LogicException;
 use Thijssensoftware\IdClient\Events\AccessRevoked;
 
 Event::listen(function (AccessRevoked $event): void {
     if (! $event->user instanceof User) {
-        return;
+        throw new LogicException('id-client.user_model is not '.User::class.'.');
     }
 
     $event->user->tokens()->delete();
@@ -111,26 +112,44 @@ property only change in a new minor:
   `sso_logged_out_at` stamp. It is typed as `Model`, because the package only
   knows your class from config, so narrow it to your own model as above before
   calling anything that model adds, such as `tokens()`. Larastan rejects the
-  call otherwise.
+  call otherwise. Throw when it is not your model rather than returning: a
+  misconfigured app then answers 500, which ID records and retries, instead of
+  answering 200 and keeping every token.
 - It is dispatched once per local user whose `idp_id` matches, on
   `access.revoked` only, and not at all when no local user matches.
 - It is never dispatched on `logout`. ID sends that per session, so tying
   tokens to it would kill a script every time the user signs out on another
   machine.
 
-Nothing listens by default. A listener runs inside ID's delivery, which times
-out after five seconds and is retried when it fails, so keep it quick and
-idempotent, or queue it.
+Nothing listens by default. A listener runs inside ID's delivery, so keep it
+quick and idempotent. ID waits five seconds for an answer and counts a timeout
+or anything but a 2xx as a failure. It makes five attempts in all: the first
+right after the revoke, then one on each of its retry runs, which come every
+five minutes. After the fifth, at most about 20 minutes after the first, it
+gives up for good. A queued listener gets none of those retries: the endpoint
+answers 200 as soon as the job is queued, so ID never sees it fail. Give a
+queued listener its own `$tries` and `$backoff`.
 
-ID does not send `access.revoked` on every revoked grant yet. Today it only
-reaches an app for which ID still holds a token issued to that user and an
-authorized-client row for them. Signing out at ID deletes both, and the token
-from the last sign-in is purged about a week later. So a user who signed in
-once, created an API token, and then signed out at ID or stayed away for a week
-gets no `access.revoked` when their access is revoked: the app hears nothing,
-and neither the stamp nor your listener runs. ID-89 tracks sending it for every
-revoked grant. Until that lands, do not treat this event alone as a guarantee
-that a revoked user loses what the app issued them.
+ID does not send `access.revoked` for every way a user can lose access yet, and
+without it your listener never runs:
+
+- A revoked grant reaches the app only if ID still holds a token issued to that
+  user for it and an authorized-client row for them. Signing out at ID deletes
+  both, and the token from the last sign-in is purged about a week later. So a
+  user who signed in once, created an API token, and then signed out at ID or
+  stayed away for a week gets no `access.revoked` when their access is revoked.
+  Taking a user off the app's access list on ID's applications screen, rather
+  than on the user's page or through a group, sends nothing at all. ID-89
+  tracks sending it for every revoked grant.
+- Deactivating the app at ID revokes its OAuth client and tokens and sends the
+  app nothing, not even a `logout`. ID-89 does not change that.
+- A user deleting their own ID account sends no `access.revoked`, at most a
+  `logout` to the apps signed in from the session that deleted it, which ends
+  the web session but does not dispatch `AccessRevoked`. ID-89 does not change
+  that either.
+
+Until ID sends it in all of these cases, do not treat this event alone as a
+guarantee that a user who lost access loses what the app issued them.
 
 ## Signing out of the whole estate
 
