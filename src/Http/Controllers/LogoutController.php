@@ -12,6 +12,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use Thijssensoftware\IdClient\Events\AccessRevoked;
 
 class LogoutController extends Controller
 {
@@ -53,7 +54,8 @@ class LogoutController extends Controller
         $event = $payload['event'] ?? 'logout';
 
         return match ($event) {
-            'logout', 'access.revoked' => $this->endSession((string) $subject),
+            'logout' => $this->endSession((string) $subject),
+            'access.revoked' => $this->revokeAccess((string) $subject),
             'user.updated' => $this->refreshUser((string) $subject, $payload),
             // An unknown type from a newer ID must not error, or upgrading the
             // server would break every consumer that has not caught up yet.
@@ -97,6 +99,23 @@ class LogoutController extends Controller
         $users->where('idp_id', $idpId)->update($attributes);
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * The stamp only ends the web session, so an app that issued anything else,
+     * such as API tokens, needs to hear about it. Deliberately not on logout:
+     * ID sends that per session, and tying tokens to it would kill a script
+     * every time the user signs out on another machine.
+     */
+    private function revokeAccess(string $idpId): JsonResponse
+    {
+        $response = $this->endSession($idpId);
+
+        foreach ($this->users()->where('idp_id', $idpId)->get() as $user) {
+            AccessRevoked::dispatch($user);
+        }
+
+        return $response;
     }
 
     /**

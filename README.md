@@ -53,7 +53,7 @@ replayed later.
 The package is versioned `0.x` and consumers pin an explicit caret on the minor:
 
 ```json
-"thijssensoftware/id-client": "^0.2.0"
+"thijssensoftware/id-client": "^0.4.0"
 ```
 
 A caret on a `0.x` version is locked to that minor, so a bump is a deliberate,
@@ -77,11 +77,42 @@ consumers that answer otherwise. See ID-77.
 | Event | Effect |
 |-------|--------|
 | `logout` | End the local session |
-| `access.revoked` | End the local session; the user lost access to this app |
+| `access.revoked` | End the local session and dispatch `AccessRevoked`; the user lost access to this app |
 | `user.updated` | Refresh the cached `name` and `email` |
 
 A payload with no `event` is treated as a logout, which is what a pre-0.3 ID
 server sends.
+
+## Access revocation
+
+`access.revoked` stamps `sso_logged_out_at` like a logout, which only ends the
+web session. An app that issues anything else, such as Sanctum API tokens, keeps
+accepting those after ID revokes the user's access unless it listens for
+`Thijssensoftware\IdClient\Events\AccessRevoked`:
+
+```php
+use Illuminate\Support\Facades\Event;
+use Thijssensoftware\IdClient\Events\AccessRevoked;
+
+Event::listen(function (AccessRevoked $event) {
+    $event->user->tokens()->delete();
+});
+```
+
+The event is part of the package's contract, so its class name and its `user`
+property only change in a new minor:
+
+- `user` is the local user model (`id-client.user_model`), already carrying the
+  `sso_logged_out_at` stamp.
+- It is dispatched once per local user whose `idp_id` matches, on
+  `access.revoked` only, and not at all when no local user matches.
+- It is never dispatched on `logout`. ID sends that per session, so tying
+  tokens to it would kill a script every time the user signs out on another
+  machine.
+
+Nothing listens by default. A listener runs inside ID's delivery, which times
+out after five seconds and is retried when it fails, so keep it quick and
+idempotent, or queue it.
 
 ## Signing out of the whole estate
 
@@ -102,7 +133,17 @@ Route::post('/logout', function () {
 The request is authenticated with the user's own access token, so an app can
 only end the session of the person whose token it holds.
 
-### Upgrading to 0.3.1
+### Upgrading from 0.3.x
+
+Bump to `^0.4.0` and redeploy. No new environment variable and no migration.
+It includes both 0.3.1 fixes below.
+
+The only change is the `AccessRevoked` event. Nothing listens to it by default,
+so an app behaves exactly as on 0.3 until it registers a listener. Any app that
+issues its own credentials, such as API tokens, should register one: see
+[Access revocation](#access-revocation).
+
+### Upgrading from 0.3.0 to 0.3.1
 
 Run `composer update thijssensoftware/id-client` in every app on `^0.3.0`. The
 constraint stays as it is, and there is no new environment variable and no

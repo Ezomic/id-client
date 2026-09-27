@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
+use Thijssensoftware\IdClient\Events\AccessRevoked;
 use Thijssensoftware\IdClient\Tests\Fixtures\User;
 
 const EVENT_SECRET = 'shared-logout-secret';
@@ -110,4 +112,74 @@ it('leaves other users alone on a profile update', function () {
 
     expect($target->fresh()->name)->toBe('Renamed')
         ->and($bystander->fresh()->name)->toBe('Bystander');
+});
+
+it('dispatches AccessRevoked for the matching user on access.revoked', function () {
+    Event::fake([AccessRevoked::class]);
+
+    $user = User::create(['name' => 'Robbin', 'email' => 'r@example.test', 'idp_id' => '42']);
+    User::create(['name' => 'Bystander', 'email' => 'b@example.test', 'idp_id' => '43']);
+
+    signedEvent([
+        'event' => 'access.revoked',
+        'sub' => '42',
+        'issued_at' => Carbon::now()->getTimestamp(),
+    ])->assertOk();
+
+    Event::assertDispatchedTimes(AccessRevoked::class, 1);
+    Event::assertDispatched(
+        AccessRevoked::class,
+        fn (AccessRevoked $event): bool => $event->user->is($user) && $event->user->sso_logged_out_at !== null,
+    );
+
+    expect($user->fresh()->sso_logged_out_at)->not->toBeNull();
+});
+
+it('does not dispatch AccessRevoked on logout', function () {
+    Event::fake([AccessRevoked::class]);
+
+    $user = User::create(['name' => 'Robbin', 'email' => 'r@example.test', 'idp_id' => '42']);
+
+    // ID sends a logout per session, so a listener revoking tokens here would
+    // kill a script every time the user signs out on another machine.
+    signedEvent([
+        'event' => 'logout',
+        'sub' => '42',
+        'issued_at' => Carbon::now()->getTimestamp(),
+    ])->assertOk();
+
+    Event::assertNotDispatched(AccessRevoked::class);
+
+    expect($user->fresh()->sso_logged_out_at)->not->toBeNull();
+});
+
+it('does not dispatch AccessRevoked on user.updated', function () {
+    Event::fake([AccessRevoked::class]);
+
+    User::create(['name' => 'Old Name', 'email' => 'old@example.test', 'idp_id' => '42']);
+
+    signedEvent([
+        'event' => 'user.updated',
+        'sub' => '42',
+        'name' => 'New Name',
+        'issued_at' => Carbon::now()->getTimestamp(),
+    ])->assertOk();
+
+    Event::assertNotDispatched(AccessRevoked::class);
+});
+
+it('does not dispatch AccessRevoked when no local user matches', function () {
+    Event::fake([AccessRevoked::class]);
+
+    $bystander = User::create(['name' => 'Bystander', 'email' => 'b@example.test', 'idp_id' => '43']);
+
+    signedEvent([
+        'event' => 'access.revoked',
+        'sub' => '42',
+        'issued_at' => Carbon::now()->getTimestamp(),
+    ])->assertOk();
+
+    Event::assertNotDispatched(AccessRevoked::class);
+
+    expect($bystander->fresh()->sso_logged_out_at)->toBeNull();
 });
