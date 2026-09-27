@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Thijssensoftware\IdClient\Http\Middleware;
 
+use Carbon\CarbonImmutable;
 use Closure;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -50,6 +52,12 @@ class EnsureSsoSessionIsActive
         // through SSO. Either way there is nothing to compare, so leave it be.
         if (! is_int($authenticatedAt)) {
             return false;
+        }
+
+        // The package adds the column but has no say over the consumer's model,
+        // so an app that does not cast it hands back the raw database string.
+        if (! $loggedOutAt instanceof DateTimeInterface) {
+            $loggedOutAt = CarbonImmutable::parse($loggedOutAt);
         }
 
         return $loggedOutAt->getTimestamp() >= $authenticatedAt;

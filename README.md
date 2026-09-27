@@ -102,6 +102,21 @@ Route::post('/logout', function () {
 The request is authenticated with the user's own access token, so an app can
 only end the session of the person whose token it holds.
 
+### Upgrading to 0.3.1
+
+Run `composer update thijssensoftware/id-client` in every app on `^0.3.0`. The
+constraint stays as it is, and there is no new environment variable and no
+migration. Two fixes to back-channel logout:
+
+- In an app whose user model does not cast `sso_logged_out_at`, every request
+  after a logout answered 500 until the session expired. The middleware now
+  parses the raw value itself, so no cast is needed, and an existing cast keeps
+  working. (ID-87)
+- `logout` and `access.revoked` now also replace the user's `remember_token`.
+  Sign-in always sets a remember-me cookie, and a session restored from that
+  cookie has no sign-in time to compare against the logout, so the cookie kept
+  the user signed in. (ID-88)
+
 ### Upgrading from 0.2.x
 
 Bump to `^0.3.0` and redeploy. No new environment variable and no migration.

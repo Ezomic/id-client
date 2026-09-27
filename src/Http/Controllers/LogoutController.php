@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 class LogoutController extends Controller
@@ -76,9 +77,24 @@ class LogoutController extends Controller
         return abs(Carbon::now()->getTimestamp() - $issuedAt) <= 300;
     }
 
+    /**
+     * Sign-in always sets a remember-me cookie, and a session restored from it
+     * carries no sign-in stamp for EnsureSsoSessionIsActive to compare, so the
+     * stamp alone would let that cookie outlive the logout. Cycling the token,
+     * as Laravel's own logout does, is what ends it.
+     */
     private function endSession(string $idpId): JsonResponse
     {
-        $this->users()->where('idp_id', $idpId)->update(['sso_logged_out_at' => Carbon::now()]);
+        $users = $this->users();
+        $attributes = ['sso_logged_out_at' => Carbon::now()];
+        $rememberTokenColumn = $users->getModel()->getRememberTokenName();
+
+        // An empty name is how a model opts out of remember tokens.
+        if (! empty($rememberTokenColumn)) {
+            $attributes[$rememberTokenColumn] = Str::random(60);
+        }
+
+        $users->where('idp_id', $idpId)->update($attributes);
 
         return response()->json(['status' => 'ok']);
     }
