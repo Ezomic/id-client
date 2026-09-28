@@ -64,6 +64,18 @@ it('rejects a user the id server says has no access to this app', function (): v
     provider(new Response(403, [], '{"message":"nope"}'))->userByToken('a-token');
 })->throws(AccessDeniedException::class, 'You do not have access to this application.');
 
+// None of these carry a user. Decoded, their body maps to a user with no subject,
+// which the callback used to match against the first account not linked to ID.
+it('refuses a userinfo answer that is not a success', function (int $status, string $body): void {
+    provider(new Response($status, [], $body))->userByToken('a-token');
+})->with([
+    'unauthenticated' => [401, '{"message":"Unauthenticated."}'],
+    'throttled' => [429, '{"message":"Too Many Attempts."}'],
+    'server error' => [500, '{"message":"Server Error"}'],
+    'unavailable' => [503, ''],
+    'redirect with no location' => [302, ''],
+])->throws(AccessDeniedException::class, 'Thijssensoftware ID could not confirm your access. Please try signing in again.');
+
 it('maps the userinfo payload onto a socialite user', function (): void {
     $user = provider()->mapUser([
         'sub' => 'idp-1',

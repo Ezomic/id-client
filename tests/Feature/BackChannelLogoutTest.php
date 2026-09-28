@@ -68,6 +68,24 @@ it('rejects a replayed call', function () {
     expect($user->fresh()->sso_logged_out_at)->toBeNull();
 });
 
+it('rejects a signed call that names no usable subject', function (array $subject) {
+    $unlinked = User::create(['name' => 'Someone Else', 'email' => 's@example.test']);
+    $blank = User::create(['name' => 'Blank', 'email' => 'b@example.test', 'idp_id' => '']);
+
+    signedCall([...$subject, 'issued_at' => Carbon::now()->getTimestamp()])
+        ->assertStatus(400)
+        ->assertJson(['error' => 'invalid_request']);
+
+    expect($unlinked->fresh()->sso_logged_out_at)->toBeNull()
+        ->and($blank->fresh()->sso_logged_out_at)->toBeNull();
+})->with([
+    'missing' => [[]],
+    'null' => [['sub' => null]],
+    'empty' => [['sub' => '']],
+    'boolean' => [['sub' => true]],
+    'array' => [['sub' => ['42']]],
+]);
+
 it('refuses every call when no secret is configured', function () {
     config()->set('id-client.logout_secret', null);
 
