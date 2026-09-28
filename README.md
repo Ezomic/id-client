@@ -170,6 +170,31 @@ Route::post('/logout', function () {
 The request is authenticated with the user's own access token, so an app can
 only end the session of the person whose token it holds.
 
+### Upgrading from 0.4.0 to 0.4.1
+
+Run `composer update thijssensoftware/id-client` in every app on `^0.4.0`. The
+constraint stays as it is, and there is no new environment variable and no
+migration. One security fix (ID-99), in the SSO callback and in the
+back-channel endpoint:
+
+- The callback signed the visitor in as an unrelated local account when ID's
+  userinfo answer carried no subject. Only a 403 from userinfo was refused; any
+  other error (a 401, a 429 from a throttle, a 500) was decoded and mapped to a
+  user with no id, and the lookup on that null id compiled to
+  `where idp_id is null`, which matches the first local account never linked to
+  ID. Any answer from userinfo that is not a 2xx is now refused like a 403, and
+  the callback answers 403 when the subject is missing, empty, or not a string
+  or an integer, so it never reaches a query.
+- A signed back-channel call whose `sub` was an empty string was accepted and
+  acted on every local account whose `idp_id` is empty. It now gets the
+  `400 invalid_request` a missing or malformed `sub` already got.
+
+What the upgrade cannot reach backwards: a session the old callback opened as
+the wrong account stays signed in until it expires, and so does the remember-me
+cookie it set. The row's `updated_at` does not show it, so it cannot be used to
+find the accounts affected. Where that matters, replace `remember_token` once
+for every user whose `idp_id` is null.
+
 ### Upgrading from 0.3.x
 
 Bump to `^0.4.0` and redeploy. No new environment variable and no migration.

@@ -41,8 +41,17 @@ class ThijssensoftwareProvider extends AbstractProvider implements ProviderInter
             RequestOptions::HTTP_ERRORS => false,
         ]);
 
-        if ($response->getStatusCode() === 403) {
+        $status = $response->getStatusCode();
+
+        if ($status === 403) {
             throw new AccessDeniedException('You do not have access to this application.');
+        }
+
+        // An expired token, a throttle or an outage answers with an error body, not
+        // a user. Decoded, it maps to a user with no subject, so it is refused here
+        // rather than handed on.
+        if ($status < 200 || $status >= 300) {
+            throw new AccessDeniedException('Thijssensoftware ID could not confirm your access. Please try signing in again.');
         }
 
         return (array) json_decode((string) $response->getBody(), true);

@@ -46,7 +46,7 @@ class LogoutController extends Controller
 
         $subject = $payload['sub'] ?? null;
 
-        if (! is_string($subject) && ! is_int($subject)) {
+        if (! is_int($subject) && (! is_string($subject) || $subject === '')) {
             return response()->json(['error' => 'invalid_request'], Response::HTTP_BAD_REQUEST);
         }
 
