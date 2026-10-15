@@ -105,3 +105,20 @@ it('keeps the raw payload on the mapped user', function (): void {
 
     expect(provider()->mapUser($payload)->getRaw())->toBe($payload);
 });
+
+it('carries the id token from the token response onto the user', function (): void {
+    $user = provider()->instance(
+        ['access_token' => 'a', 'id_token' => 'header.payload.signature'],
+        ['sub' => 'idp-1', 'email' => 'robbin@example.test'],
+    );
+
+    expect($user->id_token)->toBe('header.payload.signature')
+        ->and($user->token)->toBe('a')
+        ->and($user->getId())->toBe('idp-1');
+});
+
+it('leaves the id token null when the token response has none or a non-string', function (mixed $idToken): void {
+    $user = provider()->instance(['access_token' => 'a', 'id_token' => $idToken], ['sub' => 'idp-1']);
+
+    expect($user->id_token)->toBeNull();
+})->with([[null], [['x']], [12]]);

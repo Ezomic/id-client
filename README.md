@@ -151,6 +151,44 @@ without it your listener never runs:
 Until ID sends it in all of these cases, do not treat this event alone as a
 guarantee that a user who lost access loses what the app issued them.
 
+## Step-up re-authentication
+
+Sending the user through ID again is silent while their ID session lives, so it
+proves the browser holds a session, not that the person is there. `StepUp` asks
+ID for more: that the user re-entered a credential (a passkey or a recovery
+code) within the last N seconds. It uses OIDC `max_age` rather than
+`prompt=login`, so the ID session survives and nobody is signed out of any other
+app.
+
+```php
+use Thijssensoftware\IdClient\StepUp;
+
+// Before a sensitive action. Redirects to ID, which asks for the credential if
+// it has to and comes back through the normal /auth/sso/callback.
+if (! StepUp::satisfied(300)) {
+    return StepUp::redirect(300);
+}
+```
+
+`StepUp::url(300)` gives the same address as a string, for `Inertia::location()`.
+The user must already be signed in here and have an `idp_id`.
+
+- The window is set in your code and kept in the session. It is never read from
+  the request, so a link cannot ask for a looser one. ID enforces 30 to 86400
+  seconds, and `url()` throws outside that.
+- The callback accepts the step-up only if ID's ID token carries an `auth_time`
+  no older than the window (10 seconds of clock skew allowed), is addressed to
+  this client, and names the same user who asked. Otherwise it answers 403 and
+  nothing is stored. An ID that predates this feature sends no `auth_time`, so
+  against one the step-up fails closed instead of degrading to the silent kind.
+- `StepUp::satisfied($seconds)` compares the stored `auth_time`, ID's word for
+  when the user last re-entered a credential, with this app's clock. A plain
+  sign-in stores none, so it is `false` until a step-up has happened.
+- The ID token is read without checking its signature, as OIDC Core 3.1.3.7
+  allows for a token received over TLS straight from ID's token endpoint.
+- ID must let the client ask for the `openid` scope. Clients registered with a
+  scope allowlist need `openid` added to it before the first step-up.
+
 ## Signing out of the whole estate
 
 `EstateLogout::perform()` ends this app's session and asks ID to end the rest.
