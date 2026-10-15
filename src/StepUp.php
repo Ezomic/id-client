@@ -33,9 +33,6 @@ final class StepUp
 
     public const AUTH_TIME = 'id_client.auth_time';
 
-    /**
-     * Allowance for the two clocks disagreeing, in seconds.
-     */
     private const SKEW = 10;
 
     /**
@@ -52,17 +49,20 @@ final class StepUp
 
         $user = Auth::guard(config('id-client.guard'))->user();
         $idpId = $user?->getAttribute('idp_id');
+        $idpId = is_int($idpId) ? (string) $idpId : $idpId;
 
         if (! is_string($idpId) || $idpId === '') {
             throw new LogicException('A step-up needs a signed-in user who has an idp_id.');
         }
 
-        $target = app(Socialite::class)->driver('thijssensoftware')
+        // The manager caches its drivers, so a clone keeps the scope and max_age
+        // off every later plain sign-in redirect.
+        $target = (clone app(Socialite::class)->driver('thijssensoftware'))
             ->scopes(['openid'])
             ->with(['max_age' => $maxAge])
             ->redirect();
 
-        session([self::REQUEST => ['max_age' => $maxAge, 'idp_id' => $idpId]]);
+        session([self::REQUEST => ['max_age' => $maxAge, 'idp_id' => $idpId, 'state' => session('state')]]);
 
         return $target->getTargetUrl();
     }
@@ -78,15 +78,22 @@ final class StepUp
      */
     public static function satisfied(int $maxAge): bool
     {
-        $authTime = session(self::AUTH_TIME);
+        $proof = session(self::AUTH_TIME);
+        $user = Auth::guard(config('id-client.guard'))->user();
+        $idpId = $user?->getAttribute('idp_id');
 
-        if ($maxAge < 1 || ! is_int($authTime)) {
+        if ($maxAge < 1 || ! is_array($proof) || ! is_int($proof['at'] ?? null)) {
             return false;
         }
 
+        return (string) $idpId === ($proof['sub'] ?? null) && self::isRecent($proof['at'], $maxAge);
+    }
+
+    private static function isRecent(int $authTime, int $maxAge): bool
+    {
         $age = Carbon::now()->getTimestamp() - $authTime;
 
-        return $age >= 0 && $age <= $maxAge;
+        return $age >= -self::SKEW && $age <= $maxAge;
     }
 
     /**
@@ -123,9 +130,7 @@ final class StepUp
             throw new StepUpFailedException('ID did not confirm a recent authentication.');
         }
 
-        $age = Carbon::now()->getTimestamp() - $authTime;
-
-        if ($age < -self::SKEW || $age > $request['max_age'] + self::SKEW) {
+        if (! self::isRecent($authTime, $request['max_age'])) {
             throw new StepUpFailedException('The authentication ID confirmed is not recent enough.');
         }
 

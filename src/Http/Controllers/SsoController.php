@@ -25,16 +25,12 @@ class SsoController extends Controller
 
     public function redirect(): mixed
     {
-        // A step-up that was started and abandoned must not turn this sign-in
-        // into one that is checked against it.
-        session()->forget(StepUp::REQUEST);
-
         return $this->socialite->driver('thijssensoftware')->redirect();
     }
 
     public function callback(): RedirectResponse
     {
-        $stepUp = session()->pull(StepUp::REQUEST);
+        $stepUp = $this->pendingStepUp();
 
         try {
             $idUser = $this->socialite->driver('thijssensoftware')->user();
@@ -58,8 +54,10 @@ class SsoController extends Controller
         // before a back-channel logout from one established after it.
         session([EnsureSsoSessionIsActive::AUTHENTICATED_AT => Carbon::now()->getTimestamp()]);
 
+        session()->forget(StepUp::AUTH_TIME);
+
         if ($authTime !== null) {
-            session([StepUp::AUTH_TIME => $authTime]);
+            session([StepUp::AUTH_TIME => ['at' => $authTime, 'sub' => $subject]]);
         }
 
         // Kept so EstateLogout can prove to ID whose session is ending. It
@@ -67,6 +65,26 @@ class SsoController extends Controller
         session(['id_client.access_token' => $idUser->token ?? null]);
 
         return redirect()->intended(config('id-client.home'));
+    }
+
+    /**
+     * Only the callback of the flow that started the step-up may spend it, so a
+     * plain sign-in in another tab neither consumes it nor is checked against it.
+     *
+     * @return array<mixed>|null
+     */
+    private function pendingStepUp(): ?array
+    {
+        $stepUp = session(StepUp::REQUEST);
+        $state = request()->input('state');
+
+        if (! is_array($stepUp) || ! is_string($state) || ! is_string($stepUp['state'] ?? null) || ! hash_equals($stepUp['state'], $state)) {
+            return null;
+        }
+
+        session()->forget(StepUp::REQUEST);
+
+        return $stepUp;
     }
 
     /**

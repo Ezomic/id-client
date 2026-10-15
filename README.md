@@ -177,13 +177,16 @@ The user must already be signed in here and have an `idp_id`.
   the request, so a link cannot ask for a looser one. ID enforces 30 to 86400
   seconds, and `url()` throws outside that.
 - The callback accepts the step-up only if ID's ID token carries an `auth_time`
-  no older than the window (10 seconds of clock skew allowed), is addressed to
+  no older than the window (an `auth_time` up to 10 seconds ahead of this app's clock is tolerated), is addressed to
   this client, and names the same user who asked. Otherwise it answers 403 and
   nothing is stored. An ID that predates this feature sends no `auth_time`, so
   against one the step-up fails closed instead of degrading to the silent kind.
 - `StepUp::satisfied($seconds)` compares the stored `auth_time`, ID's word for
-  when the user last re-entered a credential, with this app's clock. A plain
-  sign-in stores none, so it is `false` until a step-up has happened.
+  when the user last re-entered a credential, with this app's clock. The proof
+  names the user it was issued for, and every callback clears it first, so a
+  plain sign-in, or a different user, is `false` until a step-up has happened.
+- Only the callback of the flow that started the step-up can complete it: the
+  pending request is tied to the OAuth `state`.
 - The ID token is read without checking its signature, as OIDC Core 3.1.3.7
   allows for a token received over TLS straight from ID's token endpoint.
 - ID must let the client ask for the `openid` scope. Clients registered with a
