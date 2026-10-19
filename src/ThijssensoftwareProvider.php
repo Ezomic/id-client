@@ -58,6 +58,21 @@ class ThijssensoftwareProvider extends AbstractProvider implements ProviderInter
     }
 
     /**
+     * Socialite keeps the token response to itself. The ID token is needed to read
+     * `auth_time` for a step-up, so it rides along on the user.
+     *
+     * @param  array<string, mixed>  $response
+     * @param  array<string, mixed>  $user
+     */
+    protected function userInstance(array $response, array $user)
+    {
+        $idToken = $response['id_token'] ?? null;
+
+        return parent::userInstance($response, $user)
+            ->map(['id_token' => is_string($idToken) ? $idToken : null]);
+    }
+
+    /**
      * @param  array<string, mixed>  $user
      */
     protected function mapUserToObject(array $user): User

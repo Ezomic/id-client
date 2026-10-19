@@ -15,7 +15,9 @@ use Laravel\Socialite\Contracts\Factory as Socialite;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Symfony\Component\HttpFoundation\Response;
 use Thijssensoftware\IdClient\Exceptions\AccessDeniedException;
+use Thijssensoftware\IdClient\Exceptions\StepUpFailedException;
 use Thijssensoftware\IdClient\Http\Middleware\EnsureSsoSessionIsActive;
+use Thijssensoftware\IdClient\StepUp;
 
 class SsoController extends Controller
 {
@@ -28,6 +30,8 @@ class SsoController extends Controller
 
     public function callback(): RedirectResponse
     {
+        $stepUp = $this->pendingStepUp();
+
         try {
             $idUser = $this->socialite->driver('thijssensoftware')->user();
         } catch (AccessDeniedException $e) {
@@ -37,6 +41,8 @@ class SsoController extends Controller
         $subject = $this->resolveSubject($idUser);
 
         abort_if($subject === null, Response::HTTP_FORBIDDEN, 'Thijssensoftware ID did not identify you. Please try signing in again.');
+
+        $authTime = is_array($stepUp) ? $this->verifyStepUp($stepUp, $subject, $idUser) : null;
 
         $user = $this->resolveUser($idUser, $subject);
 
@@ -48,11 +54,54 @@ class SsoController extends Controller
         // before a back-channel logout from one established after it.
         session([EnsureSsoSessionIsActive::AUTHENTICATED_AT => Carbon::now()->getTimestamp()]);
 
+        session()->forget(StepUp::AUTH_TIME);
+
+        if ($authTime !== null) {
+            session([StepUp::AUTH_TIME => ['at' => $authTime, 'sub' => $subject]]);
+        }
+
         // Kept so EstateLogout can prove to ID whose session is ending. It
         // lives and dies with this session.
         session(['id_client.access_token' => $idUser->token ?? null]);
 
         return redirect()->intended(config('id-client.home'));
+    }
+
+    /**
+     * Only the callback of the flow that started the step-up may spend it, so a
+     * plain sign-in in another tab neither consumes it nor is checked against it.
+     *
+     * @return array<mixed>|null
+     */
+    private function pendingStepUp(): ?array
+    {
+        $stepUp = session(StepUp::REQUEST);
+        $state = request()->input('state');
+
+        if (! is_array($stepUp) || ! is_string($state) || ! is_string($stepUp['state'] ?? null) || ! hash_equals($stepUp['state'], $state)) {
+            return null;
+        }
+
+        session()->forget(StepUp::REQUEST);
+
+        return $stepUp;
+    }
+
+    /**
+     * @param  array<mixed>  $stepUp
+     */
+    private function verifyStepUp(array $stepUp, string $subject, SocialiteUser $idUser): int
+    {
+        $maxAge = $stepUp['max_age'] ?? null;
+        $idpId = $stepUp['idp_id'] ?? null;
+
+        try {
+            abort_unless(is_int($maxAge) && is_string($idpId), Response::HTTP_FORBIDDEN, 'Step-up request was lost.');
+
+            return StepUp::complete(['max_age' => $maxAge, 'idp_id' => $idpId], $subject, $idUser->id_token ?? null);
+        } catch (StepUpFailedException $e) {
+            abort(Response::HTTP_FORBIDDEN, $e->getMessage());
+        }
     }
 
     private function resolveUser(SocialiteUser $idUser, string $subject): ?Authenticatable

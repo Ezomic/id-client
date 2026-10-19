@@ -39,4 +39,13 @@ class ExposedProvider extends ThijssensoftwareProvider
     {
         return $this->mapUserToObject($user);
     }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @param  array<string, mixed>  $user
+     */
+    public function instance(array $response, array $user): SocialiteUser
+    {
+        return $this->userInstance($response, $user);
+    }
 }
