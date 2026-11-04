@@ -68,8 +68,11 @@ class ThijssensoftwareProvider extends AbstractProvider implements ProviderInter
     {
         $idToken = $response['id_token'] ?? null;
 
-        return parent::userInstance($response, $user)
-            ->map(['id_token' => is_string($idToken) ? $idToken : null]);
+        $instance = parent::userInstance($response, $user);
+
+        // map() replaces the attributes wholesale, which would drop every claim that
+        // is not a declared property, `email_verified` among them.
+        return $instance->map([...$instance->attributes, 'id_token' => is_string($idToken) ? $idToken : null]);
     }
 
     /**
@@ -81,6 +84,7 @@ class ThijssensoftwareProvider extends AbstractProvider implements ProviderInter
             'id' => $user['sub'] ?? null,
             'name' => $user['name'] ?? null,
             'email' => $user['email'] ?? null,
+            'email_verified' => $user['email_verified'] ?? null,
             'applications' => $user['applications'] ?? [],
         ]);
     }

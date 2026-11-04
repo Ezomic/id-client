@@ -111,14 +111,16 @@ class SsoController extends Controller
 
         $email = $this->resolveEmail($idUser);
 
+        $unverified = $this->hasUnverifiedEmail($idUser);
+
         $user = $model::query()->where('idp_id', $subject)->first()
-            ?? $this->findByEmail($model, $email);
+            ?? ($unverified ? null : $this->findByEmail($model, $email));
 
         if ($user === null) {
             // Without an email there is nothing to provision against: the column is
             // required, and it is the only identifier besides the idp id we just failed
-            // to match on.
-            if (! config('id-client.provision') || $email === null) {
+            // to match on. An email ID has not verified is no identifier at all.
+            if (! config('id-client.provision') || $email === null || $unverified) {
                 return null;
             }
 
@@ -128,7 +130,7 @@ class SsoController extends Controller
         $user->forceFill([
             'idp_id' => $subject,
             'name' => $this->resolveName($idUser, $user->name, $email, $subject),
-            'email' => $email ?? $user->email,
+            'email' => $unverified ? $user->email : ($email ?? $user->email),
         ])->save();
 
         return $user;
@@ -162,6 +164,16 @@ class SsoController extends Controller
         $email = $idUser->getEmail();
 
         return $email === null || $email === '' ? null : $email;
+    }
+
+    /**
+     * Only an explicit boolean false counts. An id server that sends nothing, null
+     * or any other type is treated as before the claim existed, so older servers
+     * keep working.
+     */
+    private function hasUnverifiedEmail(SocialiteUser $idUser): bool
+    {
+        return ($idUser->email_verified ?? null) === false;
     }
 
     /**
