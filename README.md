@@ -25,6 +25,10 @@ Optional: `THIJSSENSOFTWARE_ID_GUARD`, `THIJSSENSOFTWARE_ID_USER_MODEL`,
 `THIJSSENSOFTWARE_ID_HOME`, `THIJSSENSOFTWARE_ID_REDIRECT`,
 `THIJSSENSOFTWARE_ID_PROVISION`.
 
+When ID reports `email_verified: false` for a user, the sign-in callback does not match a
+local account by email, does not provision a new one, and keeps the stored email of an
+account already linked by `idp_id`. Absent or any other value behaves as before.
+
 ## Routes
 
 | Route | What it does |
