@@ -76,6 +76,18 @@ it('logs in an existing user matched on idp id', function (): void {
         ->and($user->fresh()->email)->toBe('robbin@example.test');
 });
 
+it('issues a new session id on sign-in, so a planted one does not survive it', function (): void {
+    User::create(['name' => 'Old Name', 'email' => 'old@example.test', 'idp_id' => 'idp-1']);
+    fakeDriver(idUser());
+
+    $this->get('auth/sso/redirect');
+    $planted = session()->getId();
+
+    $this->get('auth/sso/callback')->assertRedirect('/dashboard');
+
+    expect(session()->getId())->not->toBe($planted);
+});
+
 it('adopts an existing user matched on email and backfills the idp id', function (): void {
     $user = User::create(['name' => 'Robbin', 'email' => 'robbin@example.test']);
 
