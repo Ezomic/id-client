@@ -99,6 +99,22 @@ it('adopts an existing user matched on email and backfills the idp id', function
         ->and($user->fresh()->idp_id)->toBe('idp-1');
 });
 
+/*
+ * ID-115. Alice changed her ID email but this app still holds the old one; a new
+ * ID identity registered with that old address must not take over her account.
+ */
+it('refuses an email match on an account linked to another subject', function (): void {
+    $alice = User::create(['name' => 'Alice', 'email' => 'robbin@example.test', 'idp_id' => 'idp-alice']);
+
+    fakeDriver(idUser(id: 'idp-mallory'));
+
+    $this->get('auth/sso/callback')->assertForbidden();
+
+    expect(Auth::check())->toBeFalse()
+        ->and($alice->fresh()->idp_id)->toBe('idp-alice')
+        ->and(User::query()->count())->toBe(1);
+});
+
 it('provisions a user who has never signed in here before', function (): void {
     fakeDriver(idUser());
 

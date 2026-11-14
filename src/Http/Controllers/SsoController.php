@@ -177,6 +177,11 @@ class SsoController extends Controller
     }
 
     /**
+     * Only an account no ID identity has claimed yet may be adopted on email. One
+     * already linked to another subject belongs to that person, whatever email it
+     * still carries: a stale copy of an address they have since left at ID must not
+     * hand their account to whoever registers that address next.
+     *
      * @param  class-string<Model&Authenticatable>  $model
      */
     private function findByEmail(string $model, ?string $email): ?Authenticatable
@@ -185,7 +190,15 @@ class SsoController extends Controller
             return null;
         }
 
-        return $model::query()->where('email', $email)->first();
+        $user = $model::query()->where('email', $email)->first();
+
+        abort_if(
+            $user !== null && $user->getAttribute('idp_id') !== null,
+            Response::HTTP_FORBIDDEN,
+            'This email belongs to an account linked to a different Thijssensoftware ID.',
+        );
+
+        return $user;
     }
 
     /**
