@@ -29,6 +29,10 @@ When ID reports `email_verified: false` for a user, the sign-in callback does no
 local account by email, does not provision a new one, and keeps the stored email of an
 account already linked by `idp_id`. Absent or any other value behaves as before.
 
+Matching by email only adopts a local account whose `idp_id` is still empty. When the email
+belongs to an account already linked to a different ID subject, the callback answers 403
+instead of re-linking it.
+
 ## Routes
 
 | Route | What it does |
